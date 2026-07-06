@@ -32,7 +32,7 @@ function scoreStack(stack) {
 }
 function finishRound(g) {
   const wins = [0, 0];
-  const details = theaters.map((t, i) => {
+  const detail = theaters.map((t, i) => {
     const a = scoreStack(g.round.stacks[i][0]);
     const b = scoreStack(g.round.stacks[i][1]);
     const w = a === b ? g.first : a > b ? 0 : 1;
@@ -41,7 +41,7 @@ function finishRound(g) {
   });
   const winner = wins[0] >= 2 ? 0 : 1;
   g.players[winner].vp += 6;
-  g.last = `${g.players[winner].name} gewinnt die Schlacht. ${details.join(" · ")}`;
+  g.last = `${g.players[winner].name} gewinnt die Schlacht. ${detail.join(" · ")}`;
   g.first = 1 - g.first;
   g.status = g.players[winner].vp >= 12 ? "finished" : "between";
   g.winner = g.status === "finished" ? winner : null;
@@ -51,20 +51,12 @@ async function readGame(gameCode) {
   const key = "als:" + gameCode;
   const { data, error } = await db.from("kv").select("value").eq("key", key).maybeSingle();
   if (error || !data?.value) return null;
-  try {
-    return JSON.parse(data.value);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(data.value); } catch { return null; }
 }
 async function saveGame(g) {
   if (!db) throw new Error("Supabase ist noch nicht konfiguriert.");
   const state = { ...g, version: (g.version || 0) + 1 };
-  const { data, error } = await db
-    .from("kv")
-    .upsert({ key: "als:" + state.code, value: JSON.stringify(state), updated_at: new Date().toISOString() }, { onConflict: "key" })
-    .select("value")
-    .single();
+  const { data, error } = await db.from("kv").upsert({ key: "als:" + state.code, value: JSON.stringify(state), updated_at: new Date().toISOString() }, { onConflict: "key" }).select("value").single();
   if (error) throw error;
   return JSON.parse(data.value);
 }
@@ -89,6 +81,7 @@ export default function App() {
     return () => clearInterval(t);
   }, [game?.code]);
 
+  function logout() { setGame(null); setMe(null); setSelected(null); setDown(false); setJoin(""); setError(""); }
   async function create() {
     if (!name.trim()) return setError("Bitte Namen eintragen.");
     const g = { code: code(), status: "waiting", players: [{ name: name.trim(), vp: 0 }, null], first: 0, round: null, last: "", winner: null, version: 0 };
@@ -132,13 +125,14 @@ export default function App() {
 
   if (!db) return <Shell><h1>Luft, Land und See</h1><p>Die App ist hochgeladen, aber Supabase ist noch nicht konfiguriert.</p></Shell>;
   if (!game) return <Shell><h1>Luft, Land und See</h1><input placeholder="Dein Name" value={name} onChange={e => setName(e.target.value)} /><button onClick={create}>Neues Spiel</button><div className="row"><input placeholder="CODE" value={join} maxLength={4} onChange={e => setJoin(e.target.value.toUpperCase())} /><button onClick={joinGame}>Beitreten</button></div>{error && <b>{error}</b>}</Shell>;
-  if (game.status === "waiting") return <Shell><h1>Code: {game.code}</h1><p>Gib diesen Code deinem Mitspieler. Die Seite aktualisiert sich automatisch.</p></Shell>;
+  if (game.status === "waiting") return <Shell><button className="logout" onClick={logout}>Abmelden</button><h1>Code: {game.code}</h1><p>Gib diesen Code deinem Mitspieler. Die Seite aktualisiert sich automatisch.</p></Shell>;
 
   const opp = 1 - me;
   return <Shell>
+    <button className="logout" onClick={logout}>Abmelden</button>
     <header><b>{game.players[me].name}: {game.players[me].vp}</b><span>{game.code}</span><b>{game.players[opp]?.name}: {game.players[opp]?.vp}</b></header>
     {game.last && <p className="notice">{game.last}</p>}
-    {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} gewinnt den Krieg</h2><button onClick={reset}>Neuer Krieg</button></div> : game.status === "between" ? <button onClick={next}>Nächste Schlacht</button> : <p>{game.round.turn === me ? "Du bist dran." : `${game.players[game.round.turn].name} ist dran.`}</p>}
+    {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} gewinnt den Krieg</h2><button onClick={reset}>Neuer Krieg</button></div> : game.status === "between" ? <button onClick={next}>Nächste Schlacht</button> : <p className="turnline">{game.round.turn === me ? "Du bist dran." : `${game.players[game.round.turn].name} ist dran.`}</p>}
     <main>{theaters.map((t, ti) => <section key={t} onClick={() => play(ti)} style={{ borderColor: colors[t] }}><h2 style={{ color: colors[t] }}>{t}</h2><Side title={game.players[opp]?.name} stack={game.round.stacks[ti][opp]} /><Side title="Du" stack={game.round.stacks[ti][me]} /></section>)}</main>
     {game.status === "playing" && <><h3>Deine Hand</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {c[3]}</b><small>{c[1]}</small></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> verdeckt spielen</label>}</>}
   </Shell>;
