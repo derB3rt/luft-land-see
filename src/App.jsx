@@ -23,6 +23,27 @@ function theaterName(value, lang) {
   if (lang !== "en") return value;
   return value === "Luft" ? "Air" : value === "See" ? "Sea" : value;
 }
+const DESC = {
+  A1: { de: "+3 Stärke in benachbarten Schauplätzen.", en: "+3 strength in adjacent theaters." },
+  A2: { de: "Nächste Karte darf in beliebigen Schauplatz.", en: "Next card may go to any theater." },
+  A3: { de: "Drehe eine unbedeckte Karte nebenan um.", en: "Flip an uncovered card next door." },
+  A4: { de: "Karten bis Stärke 3 dürfen überall hin.", en: "Cards up to strength 3 may go anywhere." },
+  A5: { de: "Verdeckte Karten werden sofort abgeworfen.", en: "Face-down cards are discarded." },
+  A6: { de: "Keine Fähigkeit. Pure Stärke.", en: "No ability. Pure strength." },
+  L1: { de: "Deckkarte verdeckt nebenan spielen.", en: "Play top deck card face down next door." },
+  L2: { de: "Drehe eine unbedeckte Karte irgendwo um.", en: "Flip any uncovered card." },
+  L3: { de: "Drehe eine unbedeckte Karte nebenan um.", en: "Flip an uncovered card next door." },
+  L4: { de: "Eigene Karten darunter zählen Stärke 4.", en: "Your cards below count as strength 4." },
+  L5: { de: "Beide drehen eigene Karte um. Gegner zuerst.", en: "Both flip own card. Opponent first." },
+  L6: { de: "Keine Fähigkeit. Pure Stärke.", en: "No ability. Pure strength." },
+  S1: { de: "Verschiebe eine eigene unbedeckte Karte.", en: "Move one of your uncovered cards." },
+  S2: { de: "Deine verdeckten Karten zählen Stärke 4.", en: "Your face-down cards count as strength 4." },
+  S3: { de: "Drehe eine unbedeckte Karte nebenan um.", en: "Flip an uncovered card next door." },
+  S4: { de: "Nimm eigene verdeckte Karte zurück und spiele erneut.", en: "Return own face-down card, then play again." },
+  S5: { de: "Blockiert volle benachbarte Schauplätze.", en: "Blocks crowded adjacent theaters." },
+  S6: { de: "Keine Fähigkeit. Pure Stärke.", en: "No ability. Pure strength." }
+};
+function desc(id, lang) { return DESC[id]?.[lang] || ""; }
 
 const CARDS = [
   ["A1", "Luft", 1, "Unterstützung"], ["A2", "Luft", 2, "Luftlandung"], ["A3", "Luft", 3, "Manöver"], ["A4", "Luft", 4, "Flugfeld"], ["A5", "Luft", 5, "Eindämmung"], ["A6", "Luft", 6, "Schwere Bomber"],
@@ -165,7 +186,7 @@ export default function App() {
     {game.last && <p className="notice">{game.last}</p>}
     {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} {t.winsWar}</h2><button onClick={reset}>{t.newWar}</button></div> : game.status === "between" ? <button onClick={next}>{t.next}</button> : <p className="turnline">{game.round.turn === me ? t.yourTurn : `${game.players[game.round.turn].name} ${t.isTurn}`}</p>}
     <main>{theaters.map((theater, ti) => <section key={theater} onClick={() => play(ti)} style={{ borderColor: colors[theater] }}><h2 style={{ color: colors[theater] }}>{theaterName(theater, lang)}</h2><Side title={game.players[opp]?.name} stack={game.round.stacks[ti][opp]} lang={lang} /><Side title={t.you} stack={game.round.stacks[ti][me]} lang={lang} /></section>)}</main>
-    {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {c[3]}</b><small>{theaterName(c[1], lang)}</small></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
+    {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {c[3]}</b><small>{theaterName(c[1], lang)}</small><em>{desc(id, lang)}</em></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
   </Shell>;
 }
 function Topbar({ lang, setLang, onLogout, t }) { return <div className="topbar"><div className="langswitch"><button className={lang === "de" ? "active" : ""} onClick={() => setLang("de")}>DE</button><button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>{onLogout && <button className="logout" onClick={onLogout}>{t.logout}</button>}</div>; }
