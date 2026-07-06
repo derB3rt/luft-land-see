@@ -1,1 +1,3 @@
-# luft-land-see
+# Luft, Land und See
+
+React/Vite-App fuer zwei Spieler.
