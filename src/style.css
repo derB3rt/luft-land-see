@@ -73,14 +73,40 @@ button {
 button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
 button:disabled { opacity: .6; }
 
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.langswitch {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.langswitch button,
 .logout {
-  display: block;
-  margin: 0 0 10px auto;
   min-height: 34px;
   padding: 5px 10px;
   border-radius: 999px;
   font-size: 12px;
   box-shadow: 2px 2px 0 var(--ink);
+}
+
+.langswitch button.active {
+  background: var(--ink);
+  color: var(--card);
+}
+
+.logout {
+  display: block;
+  margin: 0 0 10px auto;
+}
+
+.topbar .logout {
+  margin: 0;
 }
 
 .app > input, .app > button, .row {
@@ -240,6 +266,7 @@ label input { width: 22px; min-height: 22px; }
   .app > input, .app > button, .row, .app > b { width: 100%; }
   .row { grid-template-columns: 1fr; }
   .logout { margin-bottom: 8px; }
+  .topbar .logout { margin: 0; }
   main { gap: 6px; }
   section { min-height: 230px; padding: 6px; border-radius: 14px; }
   .card { padding: 5px; border-radius: 8px; }
