@@ -3,6 +3,7 @@ import { db } from "./data.js";
 
 const SAVE_KEY = "als-state";
 const LANG_KEY = "als-lang";
+
 function getSaved() {
   try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; }
 }
@@ -16,13 +17,49 @@ function getLang() {
 }
 
 const UI = {
-  de: { title: "Luft, Land und See", name: "Dein Name", newGame: "Neues Spiel", join: "Beitreten", needName: "Bitte Namen eintragen.", notFound: "Spiel nicht gefunden.", full: "Spiel ist schon voll.", waiting: "Gib diesen Code deinem Mitspieler. Die Seite aktualisiert sich automatisch.", yourTurn: "Du bist dran.", isTurn: "ist dran.", hand: "Deine Hand", you: "Du", down: "verdeckt spielen", downCard: "? verdeckt", next: "Nächste Schlacht", newWar: "Neuer Krieg", winsWar: "gewinnt den Krieg", winsBattle: "gewinnt die Schlacht.", wrong: "Diese Karte gehört nach", anywhere: "Verdeckt geht überall.", logout: "Abmelden", notConfigured: "Die App ist hochgeladen, aber Supabase ist noch nicht konfiguriert." },
-  en: { title: "Air, Land & Sea", name: "Your name", newGame: "New Game", join: "Join", needName: "Please enter a name.", notFound: "Game not found.", full: "This game is already full.", waiting: "Share this code with your opponent. The page refreshes automatically.", yourTurn: "Your turn.", isTurn: "is up.", hand: "Your hand", you: "You", down: "play face down", downCard: "? face down", next: "Next battle", newWar: "New war", winsWar: "wins the war", winsBattle: "wins the battle.", wrong: "This card belongs to", anywhere: "Face down works anywhere.", logout: "Logout", notConfigured: "The app is uploaded, but Supabase is not configured yet." }
+  de: {
+    title: "Luft, Land und See", name: "Dein Name", newGame: "Neues Spiel", join: "Beitreten",
+    needName: "Bitte Namen eintragen.", notFound: "Spiel nicht gefunden.", full: "Spiel ist schon voll.",
+    waiting: "Gib diesen Code deinem Mitspieler. Die Seite aktualisiert sich automatisch.",
+    yourTurn: "Du bist dran.", isTurn: "ist dran.", hand: "Deine Hand", you: "Du",
+    down: "verdeckt spielen", downCard: "? verdeckt", next: "Nächste Schlacht", newWar: "Neuer Krieg",
+    winsWar: "gewinnt den Krieg", winsBattle: "gewinnt die Schlacht.", wrong: "Diese Karte gehört nach",
+    anywhere: "Verdeckt geht überall.", logout: "Abmelden", skip: "Effekt überspringen",
+    chooseAdjacent: "Wähle einen benachbarten Schauplatz.",
+    chooseFlip: "Wähle eine unbedeckte Karte zum Drehen.",
+    chooseOwnFlip: "Wähle eine eigene unbedeckte Karte zum Drehen.",
+    chooseMove: "Wähle eine eigene unbedeckte Karte zum Verschieben.",
+    chooseMoveTarget: "Wähle den Ziel-Schauplatz.",
+    chooseRedeploy: "Wähle eine eigene verdeckte Karte für Umgruppierung.",
+    waitingEffect: "Warte auf die Effektwahl deines Mitspielers.",
+    destroyed: "wurde zerstört.",
+    notConfigured: "Die App ist hochgeladen, aber Supabase ist noch nicht konfiguriert."
+  },
+  en: {
+    title: "Air, Land & Sea", name: "Your name", newGame: "New Game", join: "Join",
+    needName: "Please enter a name.", notFound: "Game not found.", full: "This game is already full.",
+    waiting: "Share this code with your opponent. The page refreshes automatically.",
+    yourTurn: "Your turn.", isTurn: "is up.", hand: "Your hand", you: "You",
+    down: "play face down", downCard: "? face down", next: "Next battle", newWar: "New war",
+    winsWar: "wins the war", winsBattle: "wins the battle.", wrong: "This card belongs to",
+    anywhere: "Face down works anywhere.", logout: "Logout", skip: "Skip effect",
+    chooseAdjacent: "Choose an adjacent theater.",
+    chooseFlip: "Choose an uncovered card to flip.",
+    chooseOwnFlip: "Choose one of your uncovered cards to flip.",
+    chooseMove: "Choose one of your uncovered cards to move.",
+    chooseMoveTarget: "Choose the target theater.",
+    chooseRedeploy: "Choose one of your face-down cards to redeploy.",
+    waitingEffect: "Waiting for your opponent to resolve an effect.",
+    destroyed: "was destroyed.",
+    notConfigured: "The app is uploaded, but Supabase is not configured yet."
+  }
 };
+
 function theaterName(value, lang) {
   if (lang !== "en") return value;
   return value === "Luft" ? "Air" : value === "See" ? "Sea" : value;
 }
+
 const DESC = {
   A1: { de: "+3 Stärke in benachbarten Schauplätzen.", en: "+3 strength in adjacent theaters." },
   A2: { de: "Nächste Karte darf in beliebigen Schauplatz.", en: "Next card may go to any theater." },
@@ -54,6 +91,9 @@ const card = id => CARDS.find(c => c[0] === id);
 const theaters = ["Luft", "Land", "See"];
 const colors = { Luft: "#4a7fa5", Land: "#5f7040", See: "#2e6f74" };
 
+function adjacent(ti) {
+  return [ti - 1, ti + 1].filter(i => i >= 0 && i < theaters.length);
+}
 function shuffle(a) {
   const b = [...a];
   for (let i = b.length - 1; i > 0; i--) {
@@ -68,27 +108,148 @@ function code() {
 }
 function newRound(g) {
   const deck = shuffle(CARDS.map(c => c[0]));
-  g.round = { hands: [deck.slice(0, 6), deck.slice(6, 12)], deck: deck.slice(12), stacks: theaters.map(() => [[], []]), turn: g.first };
+  g.round = {
+    hands: [deck.slice(0, 6), deck.slice(6, 12)],
+    deck: deck.slice(12),
+    stacks: theaters.map(() => [[], []]),
+    turn: g.first,
+    freeNext: [false, false],
+    extraPlay: null,
+    pending: null
+  };
   g.status = "playing";
 }
-function scoreStack(stack) {
-  return stack.reduce((sum, e) => sum + (e.down ? 2 : card(e.id)[2]), 0);
+
+function faceUpIn(g, player, id) {
+  return g.round?.stacks?.some(theater => theater[player].some(e => e.id === id && !e.down));
 }
-function finishRound(g, lang) {
+function hasCoverAbove(stack, idx) {
+  return stack.slice(idx + 1).some(e => e.id === "L4" && !e.down);
+}
+function cardStrength(g, ti, player, idx) {
+  const entry = g.round.stacks[ti][player][idx];
+  const c = card(entry.id);
+  if (hasCoverAbove(g.round.stacks[ti][player], idx)) return 4;
+  if (entry.down) {
+    if (faceUpIn(g, player, "S2")) return 4;
+    return 2;
+  }
+  return c[2];
+}
+function scoreTheater(g, ti, player) {
+  if (!g?.round) return 0;
+  const stack = g.round.stacks[ti][player];
+  let total = stack.reduce((sum, _e, idx) => sum + cardStrength(g, ti, player, idx), 0);
+  for (const ai of adjacent(ti)) {
+    if (g.round.stacks[ai][player].some(e => e.id === "A1" && !e.down)) total += 3;
+  }
+  return total;
+}
+function totalCardsInTheater(g, ti) {
+  return g.round.stacks[ti][0].length + g.round.stacks[ti][1].length;
+}
+function isTop(g, ti, player, idx) {
+  return idx === g.round.stacks[ti][player].length - 1;
+}
+function topTargets(g, player, where = "any", origin = null) {
+  const allowed = where === "adjacent" ? adjacent(origin) : [0, 1, 2];
+  const out = [];
+  for (const ti of allowed) {
+    for (const pi of [0, 1]) {
+      const stack = g.round.stacks[ti][pi];
+      if (stack.length) out.push({ ti, pi, idx: stack.length - 1 });
+    }
+  }
+  return out;
+}
+function ownTopTargets(g, player, onlyFaceUp = false) {
+  const out = [];
+  for (let ti = 0; ti < 3; ti++) {
+    const stack = g.round.stacks[ti][player];
+    if (!stack.length) continue;
+    const idx = stack.length - 1;
+    if (!onlyFaceUp || !stack[idx].down) out.push({ ti, pi: player, idx });
+  }
+  return out;
+}
+function ownDownTargets(g, player) {
+  const out = [];
+  for (let ti = 0; ti < 3; ti++) {
+    g.round.stacks[ti][player].forEach((e, idx) => {
+      if (e.down) out.push({ ti, pi: player, idx });
+    });
+  }
+  return out;
+}
+function canPlace(g, player, c, ti, down) {
+  if (down) return true;
+  if (c[1] === theaters[ti]) return true;
+  if (g.round.freeNext?.[player]) return true;
+  return c[2] <= 3 && faceUpIn(g, player, "A4");
+}
+function destroyedByOngoing(g, ti, down) {
+  for (const ai of adjacent(ti)) {
+    const cards = [...g.round.stacks[ai][0], ...g.round.stacks[ai][1]];
+    if (down && cards.some(e => e.id === "A5" && !e.down)) return true;
+    if (totalCardsInTheater(g, ti) >= 3 && cards.some(e => e.id === "S5" && !e.down)) return true;
+  }
+  return false;
+}
+function nextTurnOrFinish(g, player) {
+  g.round.pending = null;
+  if (g.round.hands[0].length === 0 && g.round.hands[1].length === 0) {
+    finishRound(g);
+    return;
+  }
+  if (g.round.extraPlay === player) g.round.extraPlay = null;
+  g.round.turn = 1 - player;
+}
+function finishRound(g) {
   const wins = [0, 0];
   const detail = theaters.map((theater, i) => {
-    const a = scoreStack(g.round.stacks[i][0]);
-    const b = scoreStack(g.round.stacks[i][1]);
+    const a = scoreTheater(g, i, 0);
+    const b = scoreTheater(g, i, 1);
     const w = a === b ? g.first : a > b ? 0 : 1;
     wins[w]++;
-    return `${theaterName(theater, lang)}: ${a}:${b}`;
+    return `${theater}: ${a}:${b}`;
   });
   const winner = wins[0] >= 2 ? 0 : 1;
   g.players[winner].vp += 6;
-  g.last = `${g.players[winner].name} ${UI[lang].winsBattle} ${detail.join(" · ")}`;
+  g.last = `${g.players[winner].name} gewinnt die Schlacht. ${detail.join(" · ")}`;
   g.first = 1 - g.first;
   g.status = g.players[winner].vp >= 12 ? "finished" : "between";
   g.winner = g.status === "finished" ? winner : null;
+}
+function applyEffect(g, player, id, ti) {
+  if (id === "A2") g.round.freeNext[player] = true;
+  if (id === "L1" && g.round.deck.length && adjacent(ti).length) {
+    g.round.pending = { type: "reinforce", player, origin: ti };
+    return;
+  }
+  if ((id === "A3" || id === "L3" || id === "S3") && topTargets(g, player, "adjacent", ti).length) {
+    g.round.pending = { type: "flipAdjacent", player, origin: ti };
+    return;
+  }
+  if (id === "L2" && topTargets(g, player).length) {
+    g.round.pending = { type: "flipAny", player };
+    return;
+  }
+  if (id === "L5") {
+    const opp = 1 - player;
+    if (ownTopTargets(g, opp).length) g.round.pending = { type: "disrupt", player: opp, origin: player };
+    else if (ownTopTargets(g, player).length) g.round.pending = { type: "disrupt", player, origin: player, last: true };
+    else nextTurnOrFinish(g, player);
+    return;
+  }
+  if (id === "S1" && ownTopTargets(g, player, true).length) {
+    g.round.pending = { type: "moveSource", player };
+    return;
+  }
+  if (id === "S4" && ownDownTargets(g, player).length) {
+    g.round.pending = { type: "redeploy", player };
+    return;
+  }
+  nextTurnOrFinish(g, player);
 }
 async function readGame(gameCode) {
   if (!db) return null;
@@ -130,7 +291,20 @@ export default function App() {
     return () => clearInterval(timer);
   }, [game?.code, me, name]);
 
+  function pendingText(p) {
+    if (!p) return "";
+    if (p.player !== me) return t.waitingEffect;
+    if (p.type === "reinforce") return t.chooseAdjacent;
+    if (p.type === "flipAny" || p.type === "flipAdjacent") return t.chooseFlip;
+    if (p.type === "disrupt") return t.chooseOwnFlip;
+    if (p.type === "moveSource") return t.chooseMove;
+    if (p.type === "moveDest") return t.chooseMoveTarget;
+    if (p.type === "redeploy") return t.chooseRedeploy;
+    return "";
+  }
+
   function logout() { localStorage.removeItem(SAVE_KEY); setGame(null); setMe(null); setSelected(null); setDown(false); setJoin(""); setError(""); }
+
   async function create() {
     if (!name.trim()) return setError(t.needName);
     const g = { code: code(), status: "waiting", players: [{ name: name.trim(), vp: 0 }, null], first: 0, round: null, last: "", winner: null, version: 0 };
@@ -138,6 +312,7 @@ export default function App() {
     remember(savedGame, 0, name.trim());
     setGame(savedGame); setMe(0); setError("");
   }
+
   async function joinGame() {
     if (!name.trim()) return setError(t.needName);
     const g = await readGame(join.trim().toUpperCase());
@@ -152,26 +327,89 @@ export default function App() {
     remember(savedGame, 1, name.trim());
     setGame(savedGame); setMe(1); setError("");
   }
+
   async function mutate(fn) {
     const latest = await readGame(game.code) || game;
     const g = structuredClone(latest);
+    if (!g.round.freeNext) g.round.freeNext = [false, false];
     fn(g);
     const savedGame = await saveGame(g);
     remember(savedGame, me, name);
     setGame(savedGame); setSelected(null); setDown(false);
   }
+
   function play(ti) {
-    if (!selected || game.round.turn !== me || game.status !== "playing") return;
+    if (!selected || game.round.pending || game.round.turn !== me || game.status !== "playing") return;
     const c = card(selected);
-    if (!down && c[1] !== theaters[ti]) return setError(`${t.wrong} ${theaterName(c[1], lang)}. ${t.anywhere}`);
+    if (!canPlace(game, me, c, ti, down)) return setError(`${t.wrong} ${theaterName(c[1], lang)}. ${t.anywhere}`);
     mutate(g => {
       const h = g.round.hands[me];
       h.splice(h.indexOf(selected), 1);
+      if (g.round.freeNext) g.round.freeNext[me] = false;
+      if (destroyedByOngoing(g, ti, down)) {
+        g.last = `${c[3]} ${t.destroyed}`;
+        nextTurnOrFinish(g, me);
+        return;
+      }
       g.round.stacks[ti][me].push({ id: selected, down });
-      if (g.round.hands[0].length === 0 && g.round.hands[1].length === 0) finishRound(g, lang);
-      else g.round.turn = 1 - me;
+      if (down) nextTurnOrFinish(g, me);
+      else applyEffect(g, me, selected, ti);
     });
   }
+
+  function onTheater(ti) {
+    const p = game.round.pending;
+    if (!p || p.player !== me) return play(ti);
+    mutate(g => {
+      const q = g.round.pending;
+      if (!q || q.player !== me) return;
+      if (q.type === "reinforce" && adjacent(q.origin).includes(ti) && g.round.deck.length) {
+        const id = g.round.deck.shift();
+        g.round.stacks[ti][me].push({ id, down: true });
+        nextTurnOrFinish(g, me);
+      }
+      if (q.type === "moveDest" && ti !== q.source.ti) {
+        const entry = g.round.stacks[q.source.ti][me].splice(q.source.idx, 1)[0];
+        g.round.stacks[ti][me].push(entry);
+        nextTurnOrFinish(g, me);
+      }
+    });
+  }
+
+  function onStackCard(e, ti, pi, idx) {
+    e.stopPropagation();
+    const p = game.round.pending;
+    if (!p || p.player !== me) return;
+    mutate(g => {
+      const q = g.round.pending;
+      const stack = g.round.stacks[ti][pi];
+      if (!q || q.player !== me || !stack[idx]) return;
+      if ((q.type === "flipAny" || q.type === "flipAdjacent") && isTop(g, ti, pi, idx) && (q.type === "flipAny" || adjacent(q.origin).includes(ti))) {
+        stack[idx].down = !stack[idx].down;
+        nextTurnOrFinish(g, me);
+      } else if (q.type === "disrupt" && pi === me && isTop(g, ti, pi, idx)) {
+        stack[idx].down = !stack[idx].down;
+        const origin = q.origin;
+        if (me !== origin && ownTopTargets(g, origin).length) g.round.pending = { type: "disrupt", player: origin, origin, last: true };
+        else nextTurnOrFinish(g, origin);
+      } else if (q.type === "moveSource" && pi === me && isTop(g, ti, pi, idx) && !stack[idx].down) {
+        g.round.pending = { type: "moveDest", player: me, source: { ti, idx } };
+      } else if (q.type === "redeploy" && pi === me && stack[idx].down) {
+        const entry = stack.splice(idx, 1)[0];
+        g.round.hands[me].push(entry.id);
+        g.round.pending = null;
+        g.round.extraPlay = me;
+        g.round.turn = me;
+      }
+    });
+  }
+
+  function skipEffect() {
+    const p = game.round.pending;
+    if (!p || p.player !== me) return;
+    mutate(g => nextTurnOrFinish(g, p.origin ?? me));
+  }
+
   function next() { mutate(g => newRound(g)); }
   function reset() { mutate(g => { g.players.forEach(p => p.vp = 0); g.first = 1 - g.first; g.winner = null; newRound(g); }); }
 
@@ -180,15 +418,24 @@ export default function App() {
   if (game.status === "waiting") return <Shell><Topbar lang={lang} setLang={setLang} onLogout={logout} t={t} /><h1>Code: {game.code}</h1><p>{t.waiting}</p></Shell>;
 
   const opp = 1 - me;
+  const pending = game.round?.pending;
+
   return <Shell>
     <Topbar lang={lang} setLang={setLang} onLogout={logout} t={t} />
     <header><b>{game.players[me].name}: {game.players[me].vp}</b><span>{game.code}</span><b>{game.players[opp]?.name}: {game.players[opp]?.vp}</b></header>
     {game.last && <p className="notice">{game.last}</p>}
-    {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} {t.winsWar}</h2><button onClick={reset}>{t.newWar}</button></div> : game.status === "between" ? <button onClick={next}>{t.next}</button> : <p className="turnline">{game.round.turn === me ? t.yourTurn : `${game.players[game.round.turn].name} ${t.isTurn}`}</p>}
-    <main>{theaters.map((theater, ti) => <section key={theater} onClick={() => play(ti)} style={{ borderColor: colors[theater] }}><h2 style={{ color: colors[theater] }}>{theaterName(theater, lang)}</h2><Side title={game.players[opp]?.name} stack={game.round.stacks[ti][opp]} lang={lang} /><Side title={t.you} stack={game.round.stacks[ti][me]} lang={lang} /></section>)}</main>
+    {pending && <div className="notice effect"><b>{pendingText(pending)}</b>{pending.player === me && <button onClick={skipEffect}>{t.skip}</button>}</div>}
+    {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} {t.winsWar}</h2><button onClick={reset}>{t.newWar}</button></div> : game.status === "between" ? <button onClick={next}>{t.next}</button> : !pending && <p className="turnline">{game.round.turn === me ? t.yourTurn : `${game.players[game.round.turn].name} ${t.isTurn}`}</p>}
+    <main>{theaters.map((theater, ti) => <section key={theater} onClick={() => onTheater(ti)} style={{ borderColor: colors[theater] }}><h2 style={{ color: colors[theater] }}>{theaterName(theater, lang)}</h2><Side title={game.players[opp]?.name} stack={game.round.stacks[ti][opp]} ti={ti} pi={opp} onCard={onStackCard} lang={lang} g={game} /><Side title={t.you} stack={game.round.stacks[ti][me]} ti={ti} pi={me} onCard={onStackCard} lang={lang} g={game} /></section>)}</main>
     {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {c[3]}</b><small>{theaterName(c[1], lang)}</small><em>{desc(id, lang)}</em></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
+    {error && <b>{error}</b>}
   </Shell>;
 }
-function Topbar({ lang, setLang, onLogout, t }) { return <div className="topbar"><div className="langswitch"><button className={lang === "de" ? "active" : ""} onClick={() => setLang("de")}>DE</button><button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>{onLogout && <button className="logout" onClick={onLogout}>{t.logout}</button>}</div>; }
-function Side({ title, stack, lang }) { return <div><small>{title} · {scoreStack(stack)}</small>{stack.map((e, i) => { const c = card(e.id); return <div className="card" key={i}>{e.down ? UI[lang].downCard : `${c[2]} ${c[3]}`}</div>; })}</div>; }
+
+function Topbar({ lang, setLang, onLogout, t }) {
+  return <div className="topbar"><div className="langswitch"><button className={lang === "de" ? "active" : ""} onClick={() => setLang("de")}>DE</button><button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>{onLogout && <button className="logout" onClick={onLogout}>{t.logout}</button>}</div>;
+}
+function Side({ title, stack, ti, pi, onCard, lang, g }) {
+  return <div><small>{title} · {scoreTheater(g, ti, pi)}</small>{stack.map((e, i) => { const c = card(e.id); return <div className="card" onClick={ev => onCard(ev, ti, pi, i)} key={i}>{e.down ? UI[lang].downCard : `${c[2]} ${c[3]}`}</div>; })}</div>;
+}
 function Shell({ children }) { return <div className="app">{children}</div>; }
