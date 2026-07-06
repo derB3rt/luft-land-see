@@ -48,17 +48,25 @@ function finishRound(g) {
 }
 async function readGame(gameCode) {
   if (!db) return null;
-  const { data, error } = await db.from("games").select("state, version").eq("code", gameCode).maybeSingle();
-  if (error || !data) return null;
-  return { ...data.state, version: data.version };
+  const key = "als:" + gameCode;
+  const { data, error } = await db.from("kv").select("value").eq("key", key).maybeSingle();
+  if (error || !data?.value) return null;
+  try {
+    return JSON.parse(data.value);
+  } catch {
+    return null;
+  }
 }
 async function saveGame(g) {
   if (!db) throw new Error("Supabase ist noch nicht konfiguriert.");
-  const version = (g.version || 0) + 1;
-  const state = { ...g, version };
-  const { data, error } = await db.from("games").upsert({ code: g.code, state, version, updated_at: new Date().toISOString() }, { onConflict: "code" }).select("state, version").single();
+  const state = { ...g, version: (g.version || 0) + 1 };
+  const { data, error } = await db
+    .from("kv")
+    .upsert({ key: "als:" + state.code, value: JSON.stringify(state), updated_at: new Date().toISOString() }, { onConflict: "key" })
+    .select("value")
+    .single();
   if (error) throw error;
-  return { ...data.state, version: data.version };
+  return JSON.parse(data.value);
 }
 
 export default function App() {
@@ -122,7 +130,7 @@ export default function App() {
   function next() { mutate(g => newRound(g)); }
   function reset() { mutate(g => { g.players.forEach(p => p.vp = 0); g.first = 1 - g.first; g.winner = null; newRound(g); }); }
 
-  if (!db) return <Shell><h1>Luft, Land und See</h1><p>Die App ist hochgeladen, aber Supabase-Umgebungsvariablen fehlen noch im GitHub-Deployment.</p></Shell>;
+  if (!db) return <Shell><h1>Luft, Land und See</h1><p>Die App ist hochgeladen, aber Supabase ist noch nicht konfiguriert.</p></Shell>;
   if (!game) return <Shell><h1>Luft, Land und See</h1><input placeholder="Dein Name" value={name} onChange={e => setName(e.target.value)} /><button onClick={create}>Neues Spiel</button><div className="row"><input placeholder="CODE" value={join} maxLength={4} onChange={e => setJoin(e.target.value.toUpperCase())} /><button onClick={joinGame}>Beitreten</button></div>{error && <b>{error}</b>}</Shell>;
   if (game.status === "waiting") return <Shell><h1>Code: {game.code}</h1><p>Gib diesen Code deinem Mitspieler. Die Seite aktualisiert sich automatisch.</p></Shell>;
 
