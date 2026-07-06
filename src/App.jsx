@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { db } from "./data.js";
 
+const SAVE_KEY = "als-state";
+function getSaved() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; }
+}
+function remember(game, me, name) {
+  localStorage.setItem(SAVE_KEY, JSON.stringify({ game, me, name }));
+}
+
 const CARDS = [
   ["A1", "Luft", 1, "Unterstützung"], ["A2", "Luft", 2, "Luftlandung"], ["A3", "Luft", 3, "Manöver"], ["A4", "Luft", 4, "Flugfeld"], ["A5", "Luft", 5, "Eindämmung"], ["A6", "Luft", 6, "Schwere Bomber"],
   ["L1", "Land", 1, "Verstärkung"], ["L2", "Land", 2, "Hinterhalt"], ["L3", "Land", 3, "Manöver"], ["L4", "Land", 4, "Deckungsfeuer"], ["L5", "Land", 5, "Störmanöver"], ["L6", "Land", 6, "Schwere Panzer"],
@@ -62,10 +70,11 @@ async function saveGame(g) {
 }
 
 export default function App() {
-  const [name, setName] = useState("");
+  const [saved] = useState(getSaved);
+  const [name, setName] = useState(saved.name || "");
   const [join, setJoin] = useState("");
-  const [game, setGame] = useState(null);
-  const [me, setMe] = useState(null);
+  const [game, setGame] = useState(saved.game || null);
+  const [me, setMe] = useState(saved.me ?? null);
   const [selected, setSelected] = useState(null);
   const [down, setDown] = useState(false);
   const [error, setError] = useState("");
@@ -76,37 +85,40 @@ export default function App() {
     if (!game?.code || !db) return;
     const t = setInterval(async () => {
       const fresh = await readGame(game.code);
-      if (fresh && fresh.version > (ref.current?.version || 0)) setGame(fresh);
+      if (fresh && fresh.version > (ref.current?.version || 0)) { setGame(fresh); remember(fresh, me, name); }
     }, 2000);
     return () => clearInterval(t);
-  }, [game?.code]);
+  }, [game?.code, me, name]);
 
-  function logout() { setGame(null); setMe(null); setSelected(null); setDown(false); setJoin(""); setError(""); }
+  function logout() { localStorage.removeItem(SAVE_KEY); setGame(null); setMe(null); setSelected(null); setDown(false); setJoin(""); setError(""); }
   async function create() {
     if (!name.trim()) return setError("Bitte Namen eintragen.");
     const g = { code: code(), status: "waiting", players: [{ name: name.trim(), vp: 0 }, null], first: 0, round: null, last: "", winner: null, version: 0 };
-    const saved = await saveGame(g);
-    setGame(saved); setMe(0); setError("");
+    const savedGame = await saveGame(g);
+    remember(savedGame, 0, name.trim());
+    setGame(savedGame); setMe(0); setError("");
   }
   async function joinGame() {
     if (!name.trim()) return setError("Bitte Namen eintragen.");
     const g = await readGame(join.trim().toUpperCase());
     if (!g) return setError("Spiel nicht gefunden.");
     const existing = g.players.findIndex(p => p?.name?.toLowerCase() === name.trim().toLowerCase());
-    if (existing >= 0) { setGame(g); setMe(existing); return; }
+    if (existing >= 0) { remember(g, existing, name.trim()); setGame(g); setMe(existing); return; }
     if (g.players[1]) return setError("Spiel ist schon voll.");
     g.players[1] = { name: name.trim(), vp: 0 };
     g.first = Math.floor(Math.random() * 2);
     newRound(g);
-    const saved = await saveGame(g);
-    setGame(saved); setMe(1); setError("");
+    const savedGame = await saveGame(g);
+    remember(savedGame, 1, name.trim());
+    setGame(savedGame); setMe(1); setError("");
   }
   async function mutate(fn) {
     const latest = await readGame(game.code) || game;
     const g = structuredClone(latest);
     fn(g);
-    const saved = await saveGame(g);
-    setGame(saved); setSelected(null); setDown(false);
+    const savedGame = await saveGame(g);
+    remember(savedGame, me, name);
+    setGame(savedGame); setSelected(null); setDown(false);
   }
   function play(ti) {
     if (!selected || game.round.turn !== me || game.status !== "playing") return;
