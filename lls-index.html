@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Luft, Land und See</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #efe9dc; }
+  * { -webkit-tap-highlight-color: transparent; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+// ======================= HIER STEHEN DEINE ZWEI WERTE =======================
+const SUPABASE_URL = "https://yxtbpilbifljdmtyxnrl.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGJwaWxiaWZsamRtdHl4bnJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMjMwNzksImV4cCI6MjA5ODg5OTA3OX0.U7ORFk24zF7nt54I_AQHdKxcenlGCN4pjapnG8HtWG0";
+// ===========================================================================
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// window.storage-Ersatz über Supabase (Signatur wie zuvor, shared-Flag wird ignoriert)
+const storage = {
+  async get(key) {
+    const { data, error } = await sb.from("kv").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    return data ? { value: data.value } : null;
+  },
+  async set(key, value) {
+    const { error } = await sb.from("kv").upsert({ key, value, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    return { value };
+  },
+};
+
+// =================================================================
+// LUFT, LAND UND SEE · Online-Umsetzung des Kartenspiels von Jon Perry
+// 2 Spieler, 18 Karten, 3 Schauplätze. Erster bei 12 Siegpunkten gewinnt.
+// Sync über Supabase, Polling alle 2 Sekunden.
+// =================================================================
+
+const INK = "#1e2320";
+const PAPER = "#efe9dc";
+const RED = "#9c2f21";
+
+const THEATER_META = {
+  AIR: { de: "Luft", color: "#4a7fa5", light: "#dbe8f2" },
+  LAND: { de: "Land", color: "#5f7040", light: "#e4e8d4" },
+  SEA: { de: "See", color: "#2e6f74", light: "#d8e9e8" },
+};
+
+const CARDS = {
+  A1: { t: "AIR", s: 1, name: "Unterstützung", ab: "support", ongoing: true, txt: "Solange offen: +3 Stärke für dich in den benachbarten Schauplätzen." },
+  A2: { t: "AIR", s: 2, name: "Luftlandung", ab: "airdrop", txt: "In deinem nächsten Zug darfst du eine Karte offen in einen beliebigen Schauplatz spielen." },
+  A3: { t: "AIR", s: 3, name: "Manöver", ab: "maneuver", txt: "Drehe eine unbedeckte Karte in einem benachbarten Schauplatz um." },
+  A4: { t: "AIR", s: 4, name: "Flugfeld", ab: "aerodrome", ongoing: true, txt: "Solange offen: Du darfst Karten mit Stärke 3 oder weniger offen in beliebige Schauplätze spielen." },
+  A5: { t: "AIR", s: 5, name: "Eindämmung", ab: "containment", ongoing: true, txt: "Solange offen: Jede verdeckt gespielte Karte wird sofort abgeworfen." },
+  A6: { t: "AIR", s: 6, name: "Schwere Bomber", ab: null, txt: "Keine Fähigkeit. Pure Stärke." },
+  L1: { t: "LAND", s: 1, name: "Verstärkung", ab: "reinforce", txt: "Du darfst die oberste Karte des Nachziehstapels verdeckt in einen benachbarten Schauplatz spielen." },
+  L2: { t: "LAND", s: 2, name: "Hinterhalt", ab: "ambush", txt: "Drehe eine unbedeckte Karte in einem beliebigen Schauplatz um." },
+  L3: { t: "LAND", s: 3, name: "Manöver", ab: "maneuver", txt: "Drehe eine unbedeckte Karte in einem benachbarten Schauplatz um." },
+  L4: { t: "LAND", s: 4, name: "Deckungsfeuer", ab: "coverfire", ongoing: true, txt: "Solange offen: Alle deine Karten unter dieser Karte haben Stärke 4." },
+  L5: { t: "LAND", s: 5, name: "Störmanöver", ab: "disrupt", txt: "Beide Spieler drehen eine eigene unbedeckte Karte um. Der Gegner zuerst." },
+  L6: { t: "LAND", s: 6, name: "Schwere Panzer", ab: null, txt: "Keine Fähigkeit. Pure Stärke." },
+  S1: { t: "SEA", s: 1, name: "Transport", ab: "transport", txt: "Du darfst eine deiner unbedeckten Karten in einen anderen Schauplatz verschieben." },
+  S2: { t: "SEA", s: 2, name: "Eskalation", ab: "escalation", ongoing: true, txt: "Solange offen: Deine verdeckten Karten haben Stärke 4." },
+  S3: { t: "SEA", s: 3, name: "Manöver", ab: "maneuver", txt: "Drehe eine unbedeckte Karte in einem benachbarten Schauplatz um." },
+  S4: { t: "SEA", s: 4, name: "Umgruppierung", ab: "redeploy", txt: "Du darfst eine deiner verdeckten Karten auf die Hand zurücknehmen. Tust du das, spielst du sofort noch eine Karte." },
+  S5: { t: "SEA", s: 5, name: "Blockade", ab: "blockade", ongoing: true, txt: "Solange offen: Wird eine Handkarte in einen benachbarten Schauplatz mit 3 oder mehr Karten gespielt, wird sie abgeworfen." },
+  S6: { t: "SEA", s: 6, name: "Schlachtschiff", ab: null, txt: "Keine Fähigkeit. Pure Stärke." },
+};
+const ALL_IDS = Object.keys(CARDS);
+const C = (id) => CARDS[id];
+
+const WIN_VP = 12;
+
+function withdrawVP(isFirstPlayer, handCount) {
+  if (isFirstPlayer) {
+    if (handCount >= 4) return 2;
+    if (handCount === 3) return 3;
+    if (handCount === 2) return 4;
+    return 6;
+  } else {
+    if (handCount >= 5) return 2;
+    if (handCount === 4) return 3;
+    if (handCount === 3) return 4;
+    return 6;
+  }
+}
+
+function norm(s) { return s.trim().toLowerCase(); }
+function randomCode() {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ";
+  return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+async function readGame(code) {
+  try {
+    const res = await storage.get("als:" + code);
+    return res ? JSON.parse(res.value) : null;
+  } catch (e) { return null; }
+}
+async function writeGame(g) {
+  g.version = (g.version || 0) + 1;
+  await storage.set("als:" + g.code, JSON.stringify(g));
+  return g;
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function newBattle(g) {
+  const deck = shuffle(ALL_IDS);
+  g.battle = {
+    hands: [deck.slice(0, 6), deck.slice(6, 12)],
+    deck: deck.slice(12),
+    discard: [],
+    stacks: [ [[], []], [[], []], [[], []] ],
+    turn: g.firstPlayer,
+    pending: [],
+    airdrop: [null, null],
+    extraTurnFor: null,
+  };
+}
+
+function ownerHasFaceUp(g, pi, cardId) {
+  return g.battle.stacks.some((th) => th[pi].some((e) => e.c === cardId && e.up));
+}
+function anyoneHasFaceUp(g, cardId) {
+  return g.battle.stacks.some((th) => th.some((side) => side.some((e) => e.c === cardId && e.up)));
+}
+function adjacentIdx(ti) {
+  return [ti - 1, ti + 1].filter((i) => i >= 0 && i <= 2);
+}
+function cardCountInTheater(g, ti) {
+  return g.battle.stacks[ti][0].length + g.battle.stacks[ti][1].length;
+}
+
+function theaterStrength(g, ti, pi) {
+  const stack = g.battle.stacks[ti][pi];
+  const escal = ownerHasFaceUp(g, pi, "S2");
+  let total = 0;
+  stack.forEach((e, i) => {
+    const coveredByL4 = stack.some((e2, j) => j > i && e2.c === "L4" && e2.up);
+    if (coveredByL4) total += 4;
+    else if (e.up) total += C(e.c).s;
+    else total += escal ? 4 : 2;
+  });
+  adjacentIdx(ti).forEach((ai) => {
+    if (g.battle.stacks[ai][pi].some((e) => e.c === "A1" && e.up)) total += 3;
+  });
+  return total;
+}
+
+function placeCard(g, pi, ti, cardId, faceUp, log) {
+  const card = C(cardId);
+  const blockaded = adjacentIdx(ti).some((ai) =>
+    g.battle.stacks[ai].some((side) => side.some((e) => e.c === "S5" && e.up))
+  ) && cardCountInTheater(g, ti) >= 3;
+  if (blockaded) {
+    g.battle.discard.push(cardId);
+    log.push(`Blockade wirft ${card.name} (${card.s}) ab.`);
+    return false;
+  }
+  if (!faceUp && anyoneHasFaceUp(g, "A5")) {
+    g.battle.discard.push(cardId);
+    log.push(`Eindämmung wirft die verdeckte Karte ab.`);
+    return false;
+  }
+  g.battle.stacks[ti][pi].push({ c: cardId, up: faceUp });
+  return true;
+}
+
+function triggerAbility(g, pi, cardId, ti, log) {
+  const ab = C(cardId).ab;
+  if (!ab || C(cardId).ongoing) return;
+  const P = g.battle.pending;
+  switch (ab) {
+    case "airdrop":
+      g.battle.airdrop[pi] = "pending";
+      log.push(`${g.players[pi].name} darf im nächsten Zug frei platzieren.`);
+      break;
+    case "maneuver":
+      P.unshift({ type: "flip", actor: pi, scope: "adjacent", theater: ti, ownOnly: false, optional: false });
+      break;
+    case "ambush":
+      P.unshift({ type: "flip", actor: pi, scope: "any", ownOnly: false, optional: false });
+      break;
+    case "disrupt":
+      P.unshift(
+        { type: "flip", actor: 1 - pi, scope: "any", ownOnly: true, optional: false },
+        { type: "flip", actor: pi, scope: "any", ownOnly: true, optional: false }
+      );
+      break;
+    case "transport":
+      P.unshift({ type: "transport", actor: pi, optional: true });
+      break;
+    case "reinforce":
+      P.unshift({ type: "reinforce", actor: pi, theater: ti, optional: true });
+      break;
+    case "redeploy":
+      P.unshift({ type: "redeploy", actor: pi, optional: true });
+      break;
+    default:
+      break;
+  }
+}
+
+function flipTargets(g, item) {
+  const targets = [];
+  const theaters = item.scope === "adjacent" ? adjacentIdx(item.theater) : [0, 1, 2];
+  theaters.forEach((ti) => {
+    [0, 1].forEach((pi) => {
+      if (item.ownOnly && pi !== item.actor) return;
+      const stack = g.battle.stacks[ti][pi];
+      if (stack.length > 0) targets.push({ ti, pi, idx: stack.length - 1 });
+    });
+  });
+  return targets;
+}
+
+function transportSources(g, actor) {
+  const out = [];
+  g.battle.stacks.forEach((th, ti) => {
+    const stack = th[actor];
+    if (stack.length > 0) out.push({ ti, pi: actor, idx: stack.length - 1 });
+  });
+  return out;
+}
+
+function redeployTargets(g, actor) {
+  const out = [];
+  g.battle.stacks.forEach((th, ti) => {
+    th[actor].forEach((e, idx) => { if (!e.up) out.push({ ti, pi: actor, idx }); });
+  });
+  return out;
+}
+
+function pendingHasTargets(g, item) {
+  if (item.type === "flip") return flipTargets(g, item).length > 0;
+  if (item.type === "transport") return transportSources(g, item.actor).length > 0;
+  if (item.type === "reinforce") return g.battle.deck.length > 0;
+  if (item.type === "redeploy") return redeployTargets(g, item.actor).length > 0;
+  return false;
+}
+
+function pruneQueue(g, log) {
+  while (g.battle.pending.length > 0 && !pendingHasTargets(g, g.battle.pending[0])) {
+    const it = g.battle.pending.shift();
+    log.push(`Fähigkeit (${it.type}) verpufft, kein gültiges Ziel.`);
+  }
+}
+
+function finalizeIfIdle(g, log) {
+  pruneQueue(g, log);
+  if (g.battle.pending.length > 0) return;
+
+  if (g.battle.hands[0].length === 0 && g.battle.hands[1].length === 0) {
+    resolveBattle(g, log);
+    return;
+  }
+
+  const cur = g.battle.turn;
+  if (g.battle.extraTurnFor !== null) {
+    g.battle.turn = g.battle.extraTurnFor;
+    g.battle.extraTurnFor = null;
+    if (g.battle.hands[g.battle.turn].length === 0) g.battle.turn = 1 - g.battle.turn;
+    return;
+  }
+  if (g.battle.airdrop[cur] === "active") g.battle.airdrop[cur] = null;
+  if (g.battle.airdrop[cur] === "pending") g.battle.airdrop[cur] = "active";
+  g.battle.turn = 1 - cur;
+  if (g.battle.hands[g.battle.turn].length === 0 && g.battle.hands[1 - g.battle.turn].length > 0) {
+    g.battle.turn = 1 - g.battle.turn;
+  }
+}
+
+function resolveBattle(g, log) {
+  const controls = [0, 0];
+  const detail = [];
+  [0, 1, 2].forEach((ti) => {
+    const s0 = theaterStrength(g, ti, 0);
+    const s1 = theaterStrength(g, ti, 1);
+    let winner;
+    if (s0 > s1) winner = 0;
+    else if (s1 > s0) winner = 1;
+    else winner = g.firstPlayer;
+    controls[winner]++;
+    detail.push({ theater: g.theaters[ti], s0, s1, winner });
+  });
+  const w = controls[0] >= 2 ? 0 : 1;
+  g.players[w].vp += 6;
+  g.lastBattle = { type: "full", winner: w, vp: 6, detail };
+  log.push(`${g.players[w].name} gewinnt die Schlacht (6 SP).`);
+  endBattle(g);
+}
+
+function withdraw(g, pi, log) {
+  const opp = 1 - pi;
+  const vp = withdrawVP(pi === g.firstPlayer, g.battle.hands[pi].length);
+  g.players[opp].vp += vp;
+  g.lastBattle = { type: "withdraw", winner: opp, loser: pi, vp };
+  log.push(`${g.players[pi].name} zieht sich zurück. ${g.players[opp].name} erhält ${vp} SP.`);
+  endBattle(g);
+}
+
+function endBattle(g) {
+  if (g.players[0].vp >= WIN_VP || g.players[1].vp >= WIN_VP) {
+    g.status = "finished";
+    g.winner = g.players[0].vp >= WIN_VP ? 0 : 1;
+  } else {
+    g.status = "battleEnd";
+  }
+}
+
+function startNextBattle(g) {
+  g.theaters = [g.theaters[2], g.theaters[0], g.theaters[1]];
+  g.firstPlayer = 1 - g.firstPlayer;
+  newBattle(g);
+  g.status = "playing";
+}
+
+function LuftLandUndSee() {
+  const [screen, setScreen] = useState("home");
+  const [name, setName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [game, setGame] = useState(null);
+  const [myIndex, setMyIndex] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [selCard, setSelCard] = useState(null);
+  const [faceDownMode, setFaceDownMode] = useState(false);
+  const [transportSrc, setTransportSrc] = useState(null);
+  const [showRules, setShowRules] = useState(false);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const gameRef = useRef(null);
+  gameRef.current = game;
+
+  useEffect(() => {
+    if (!game || screen === "home") return;
+    const t = setInterval(async () => {
+      const fresh = await readGame(game.code);
+      if (fresh && fresh.version > (gameRef.current?.version || 0)) {
+        setGame(fresh);
+        setSelCard(null); setTransportSrc(null); setConfirmWithdraw(false);
+        if (screen === "lobby" && fresh.status !== "waiting") setScreen("play");
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [game?.code, screen]);
+
+  useEffect(() => {
+    if (game && game.status !== "waiting" && screen === "lobby") setScreen("play");
+  }, [game?.status]);
+
+  async function commit(mutator) {
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      const latest = (await readGame(gameRef.current.code)) || gameRef.current;
+      const g = JSON.parse(JSON.stringify(latest));
+      const log = [];
+      mutator(g, log);
+      g.log = [...log.reverse(), ...(g.log || [])].slice(0, 40);
+      const saved = await writeGame(g);
+      setGame(saved);
+      setSelCard(null); setFaceDownMode(false); setTransportSrc(null); setConfirmWithdraw(false);
+    } catch (e) {
+      setError("Verbindung gestört. Nochmal versuchen.");
+    }
+    setBusy(false);
+  }
+
+  async function createGame() {
+    if (!name.trim()) { setError("Erst einen Namen eintragen."); return; }
+    setBusy(true); setError("");
+    try {
+      const g = {
+        code: randomCode(),
+        status: "waiting",
+        players: [{ name: name.trim(), vp: 0 }, null],
+        theaters: shuffle(["AIR", "LAND", "SEA"]),
+        firstPlayer: 0,
+        battle: null,
+        lastBattle: null,
+        winner: null,
+        log: [],
+        version: 0,
+      };
+      await writeGame(g);
+      setGame(g); setMyIndex(0); setScreen("lobby");
+    } catch (e) { setError("Spiel konnte nicht angelegt werden."); }
+    setBusy(false);
+  }
+
+  async function joinGame() {
+    if (!name.trim()) { setError("Erst einen Namen eintragen."); return; }
+    const code = joinCode.trim().toUpperCase();
+    if (code.length !== 4) { setError("Der Code hat vier Buchstaben."); return; }
+    setBusy(true); setError("");
+    try {
+      const g = await readGame(code);
+      if (!g) { setError("Kein Spiel mit diesem Code gefunden."); setBusy(false); return; }
+      const existing = g.players.findIndex((p) => p && norm(p.name) === norm(name));
+      if (existing >= 0) {
+        setGame(g); setMyIndex(existing);
+        setScreen(g.status === "waiting" ? "lobby" : "play");
+        setBusy(false); return;
+      }
+      if (g.players[1]) { setError("Das Spiel ist schon voll."); setBusy(false); return; }
+      g.players[1] = { name: name.trim(), vp: 0 };
+      g.firstPlayer = Math.floor(Math.random() * 2);
+      newBattle(g);
+      g.status = "playing";
+      const saved = await writeGame(g);
+      setGame(saved); setMyIndex(1); setScreen("play");
+    } catch (e) { setError("Beitritt fehlgeschlagen."); }
+    setBusy(false);
+  }
+
+  function playCard(ti) {
+    const cardId = selCard;
+    const down = faceDownMode;
+    commit((g, log) => {
+      const me = myIndex;
+      if (g.status !== "playing" || g.battle.turn !== me || g.battle.pending.length > 0) return;
+      const hand = g.battle.hands[me];
+      const hi = hand.indexOf(cardId);
+      if (hi < 0) return;
+      const card = C(cardId);
+      if (!down) {
+        const allowedAnywhere =
+          g.battle.airdrop[me] === "active" ||
+          (ownerHasFaceUp(g, me, "A4") && card.s <= 3);
+        if (g.theaters[ti] !== card.t && !allowedAnywhere) return;
+      }
+      hand.splice(hi, 1);
+      const stayed = placeCard(g, me, ti, cardId, !down, log);
+      log.push(`${g.players[me].name} spielt ${down ? "eine Karte verdeckt" : card.name + " (" + card.s + ")"} nach ${THEATER_META[g.theaters[ti]].de}.`);
+      if (stayed && !down) triggerAbility(g, me, cardId, ti, log);
+      finalizeIfIdle(g, log);
+    });
+  }
+
+  function doWithdraw() {
+    commit((g, log) => {
+      if (g.status !== "playing" || g.battle.turn !== myIndex || g.battle.pending.length > 0) return;
+      withdraw(g, myIndex, log);
+    });
+  }
+
+  function resolveFlip(ti, pi) {
+    commit((g, log) => {
+      const item = g.battle.pending[0];
+      if (!item || item.type !== "flip" || item.actor !== myIndex) return;
+      const ok = flipTargets(g, item).some((t) => t.ti === ti && t.pi === pi);
+      if (!ok) return;
+      const stack = g.battle.stacks[ti][pi];
+      const e = stack[stack.length - 1];
+      e.up = !e.up;
+      g.battle.pending.shift();
+      log.push(`${g.players[myIndex].name} dreht ${C(e.c).name} ${e.up ? "auf" : "um (jetzt verdeckt, Stärke 2)"}.`);
+      if (e.up) triggerAbility(g, pi, e.c, ti, log);
+      finalizeIfIdle(g, log);
+    });
+  }
+
+  function resolveTransport(destTi) {
+    const src = transportSrc;
+    commit((g, log) => {
+      const item = g.battle.pending[0];
+      if (!item || item.type !== "transport" || item.actor !== myIndex || !src) return;
+      const stack = g.battle.stacks[src.ti][myIndex];
+      if (stack.length === 0 || destTi === src.ti) return;
+      const e = stack.pop();
+      g.battle.stacks[destTi][myIndex].push(e);
+      g.battle.pending.shift();
+      log.push(`${g.players[myIndex].name} verschiebt eine Karte nach ${THEATER_META[g.theaters[destTi]].de}.`);
+      finalizeIfIdle(g, log);
+    });
+  }
+
+  function resolveReinforce(destTi) {
+    commit((g, log) => {
+      const item = g.battle.pending[0];
+      if (!item || item.type !== "reinforce" || item.actor !== myIndex) return;
+      if (!adjacentIdx(item.theater).includes(destTi) || g.battle.deck.length === 0) return;
+      const cardId = g.battle.deck.shift();
+      g.battle.pending.shift();
+      placeCard(g, myIndex, destTi, cardId, false, log);
+      log.push(`${g.players[myIndex].name} verstärkt ${THEATER_META[g.theaters[destTi]].de} verdeckt vom Stapel.`);
+      finalizeIfIdle(g, log);
+    });
+  }
+
+  function resolveRedeploy(ti, idx) {
+    commit((g, log) => {
+      const item = g.battle.pending[0];
+      if (!item || item.type !== "redeploy" || item.actor !== myIndex) return;
+      const stack = g.battle.stacks[ti][myIndex];
+      if (!stack[idx] || stack[idx].up) return;
+      const [e] = stack.splice(idx, 1);
+      g.battle.hands[myIndex].push(e.c);
+      g.battle.pending.shift();
+      g.battle.extraTurnFor = myIndex;
+      log.push(`${g.players[myIndex].name} nimmt eine verdeckte Karte zurück und spielt sofort erneut.`);
+      finalizeIfIdle(g, log);
+    });
+  }
+
+  function skipPending() {
+    commit((g, log) => {
+      const item = g.battle.pending[0];
+      if (!item || item.actor !== myIndex) return;
+      g.battle.pending.shift();
+      log.push(`${g.players[myIndex].name} verzichtet auf die Fähigkeit.`);
+      finalizeIfIdle(g, log);
+    });
+  }
+
+  function nextBattle() {
+    commit((g) => { if (g.status === "battleEnd") startNextBattle(g); });
+  }
+
+  function newWar() {
+    commit((g) => {
+      g.players.forEach((p) => { if (p) p.vp = 0; });
+      g.winner = null;
+      g.status = "battleEnd";
+      startNextBattle(g);
+    });
+  }
+
+  const S = {
+    root: { minHeight: "100vh", background: PAPER, color: INK, fontFamily: "'Avenir Next','Segoe UI',system-ui,sans-serif", padding: "14px 10px 100px", boxSizing: "border-box", maxWidth: 560, margin: "0 auto" },
+    display: { fontFamily: "'Futura','Avenir Next Condensed','Arial Narrow',sans-serif", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" },
+    btn: (bg, small) => ({ fontSize: small ? 13 : 16, fontWeight: 700, padding: small ? "7px 12px" : "12px 16px", border: `1.5px solid ${INK}`, borderRadius: 9, background: bg, color: "#fff", cursor: "pointer", boxShadow: "2px 2px 0 " + INK, fontFamily: "inherit" }),
+    input: { width: "100%", boxSizing: "border-box", fontSize: 17, padding: "11px 13px", border: `1.5px solid ${INK}`, borderRadius: 9, background: "#fff", outline: "none", fontFamily: "inherit" },
+    banner: { border: `1.5px solid ${INK}`, borderRadius: 10, background: "#fff8e6", padding: "10px 12px", fontSize: 14, fontWeight: 600, boxShadow: "2px 2px 0 " + INK },
+  };
+
+  if (screen === "home") {
+    return (
+      <div style={{ ...S.root, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ ...S.display, fontSize: "clamp(34px,10vw,52px)", lineHeight: 0.95, textAlign: "center", marginTop: 20 }}>
+          <span style={{ color: THEATER_META.AIR.color }}>Luft,</span>{" "}
+          <span style={{ color: THEATER_META.LAND.color }}>Land</span><br />
+          <span>und</span> <span style={{ color: THEATER_META.SEA.color }}>See</span>
+        </div>
+        <p style={{ fontSize: 13, opacity: 0.75, textAlign: "center", maxWidth: 340, lineHeight: 1.5, margin: "12px 0 20px" }}>
+          Online-Umsetzung des Kartenspiels von Jon Perry. Kontrolliere zwei der drei Schauplätze oder zwing deinen Gegner zum Rückzug. Erster bei {WIN_VP} Siegpunkten gewinnt den Krieg.
+        </p>
+        <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: 11, border: `1.5px solid ${INK}`, borderRadius: 12, padding: 18, background: "#fff", boxShadow: "4px 4px 0 " + INK }}>
+          <input style={S.input} placeholder="Dein Name" value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
+          <button style={S.btn(THEATER_META.LAND.color)} disabled={busy} onClick={createGame}>Neues Spiel eröffnen</button>
+          <div style={{ display: "flex", gap: 9 }}>
+            <input style={{ ...S.input, flex: 1, textTransform: "uppercase", letterSpacing: 4, fontWeight: 700 }} placeholder="CODE" value={joinCode} maxLength={4} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} />
+            <button style={{ ...S.btn(THEATER_META.SEA.color), flex: 1 }} disabled={busy} onClick={joinGame}>Beitreten</button>
+          </div>
+          {error && <div style={{ color: RED, fontWeight: 700, fontSize: 14 }}>{error}</div>}
+          <div style={{ fontSize: 12, opacity: 0.65, lineHeight: 1.45 }}>
+            Der Spielstand liegt in einer geteilten Datenbank und ist technisch für andere Nutzer einsehbar (auch die Handkarten, wenn jemand tricksen will).
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "lobby" && game) {
+    return (
+      <div style={{ ...S.root, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ ...S.display, fontSize: 24, marginTop: 50 }}>Warten auf Gegner</div>
+        <div style={{ marginTop: 20, border: `1.5px solid ${INK}`, borderRadius: 12, padding: 20, background: "#fff", textAlign: "center", boxShadow: "4px 4px 0 " + INK }}>
+          <div style={{ fontSize: 13, opacity: 0.7 }}>Code weitergeben:</div>
+          <div style={{ ...S.display, fontSize: 58, letterSpacing: 12, margin: "6px 0" }}>{game.code}</div>
+          <div style={{ fontSize: 13, opacity: 0.7, maxWidth: 280 }}>
+            Dein Gegner öffnet dieselbe Seite, gibt seinen Namen ein und tritt mit dem Code bei. Die Seite aktualisiert sich von selbst.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!game || !game.battle) return null;
+
+  const b = game.battle;
+  const me = myIndex;
+  const opp = 1 - me;
+  const myTurn = game.status === "playing" && b.turn === me && b.pending.length === 0;
+  const pending = b.pending[0] || null;
+  const iAmPendingActor = pending && pending.actor === me;
+
+  let flipTgt = [], transportSrcs = [], redepTgts = [], reinforceDest = [], transportDest = [];
+  if (pending && iAmPendingActor) {
+    if (pending.type === "flip") flipTgt = flipTargets(game, pending);
+    if (pending.type === "transport") {
+      transportSrcs = transportSources(game, me);
+      if (transportSrc) transportDest = [0, 1, 2].filter((ti) => ti !== transportSrc.ti);
+    }
+    if (pending.type === "redeploy") redepTgts = redeployTargets(game, me);
+    if (pending.type === "reinforce") reinforceDest = adjacentIdx(pending.theater);
+  }
+  const legalTheaters = selCard == null ? [] : [0, 1, 2].filter((ti) => {
+    if (faceDownMode) return true;
+    const card = C(selCard);
+    if (game.theaters[ti] === card.t) return true;
+    if (b.airdrop[me] === "active") return true;
+    if (ownerHasFaceUp(game, me, "A4") && card.s <= 3) return true;
+    return false;
+  });
+
+  const pendingText = pending ? ({
+    flip: pending.ownOnly ? "Eine eigene unbedeckte Karte umdrehen" : (pending.scope === "adjacent" ? "Unbedeckte Karte in einem Nachbar-Schauplatz umdrehen" : "Beliebige unbedeckte Karte umdrehen"),
+    transport: transportSrc ? "Ziel-Schauplatz antippen" : "Eigene unbedeckte Karte zum Verschieben wählen",
+    reinforce: "Nachbar-Schauplatz für die verdeckte Verstärkung wählen",
+    redeploy: "Eigene verdeckte Karte zurück auf die Hand nehmen",
+  })[pending.type] : "";
+
+  function CardChip({ entry, mine, ti, idx, isTop }) {
+    const card = C(entry.c);
+    const meta = THEATER_META[card.t];
+    const showFace = entry.up || mine;
+    const pi = mine ? me : opp;
+    const highlight =
+      (flipTgt.some((t) => t.ti === ti && t.pi === pi) && isTop) ||
+      (transportSrcs.some((t) => t.ti === ti) && mine && isTop && !transportSrc) ||
+      (redepTgts.some((t) => t.ti === ti && t.idx === idx) && mine);
+    const selected = transportSrc && mine && transportSrc.ti === ti && isTop;
+    const onTap = () => {
+      if (busy || !iAmPendingActor) return;
+      if (pending.type === "flip" && isTop) resolveFlip(ti, pi);
+      else if (pending.type === "transport" && mine && isTop && !transportSrc) setTransportSrc({ ti, idx });
+      else if (pending.type === "redeploy" && mine && !entry.up) resolveRedeploy(ti, idx);
+    };
+    return (
+      <div onClick={onTap} style={{
+        border: `1.5px solid ${highlight || selected ? RED : INK}`,
+        borderRadius: 7,
+        padding: "3px 6px",
+        marginTop: 3,
+        background: entry.up ? meta.light : "#d8d3c6",
+        opacity: entry.up ? 1 : 0.85,
+        fontSize: 11.5,
+        lineHeight: 1.25,
+        cursor: highlight || (pending?.type === "transport" && mine && isTop) ? "pointer" : "default",
+        boxShadow: highlight || selected ? `0 0 0 2px ${RED}44` : "none",
+      }}>
+        {showFace ? (
+          <React.Fragment>
+            <span style={{ ...S.display, fontSize: 13, color: meta.color }}>{card.s}</span>{" "}
+            <span style={{ fontWeight: 700 }}>{card.name}</span>
+            {!entry.up && <span style={{ opacity: 0.6 }}> · verdeckt</span>}
+            {card.ab && entry.up && <div style={{ fontSize: 10, opacity: 0.72 }}>{card.txt}</div>}
+          </React.Fragment>
+        ) : (
+          <span style={{ fontWeight: 700, opacity: 0.7 }}>? · verdeckt</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.root}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+        <span>{game.players[me].name} · {game.players[me].vp} SP {game.firstPlayer === me && <span style={{ color: RED }}>①</span>}</span>
+        <span style={{ opacity: 0.5, fontSize: 12 }}>{game.code}</span>
+        <span>{game.firstPlayer === opp && <span style={{ color: RED }}>①</span>} {game.players[opp]?.name} · {game.players[opp]?.vp} SP</span>
+      </div>
+
+      {game.status === "playing" && (
+        <div style={{ ...S.banner, marginBottom: 10, background: myTurn || iAmPendingActor ? "#fff8e6" : "#eee9dd" }}>
+          {pending
+            ? (iAmPendingActor ? `Fähigkeit: ${pendingText}` : `${game.players[pending.actor].name} löst eine Fähigkeit aus…`)
+            : (myTurn ? (selCard ? "Schauplatz antippen" : "Du bist dran: Karte aus der Hand wählen oder zurückziehen") : `${game.players[b.turn].name} ist am Zug…`)}
+          {iAmPendingActor && pending.optional && (
+            <button style={{ ...S.btn("#8a6d3b", true), marginLeft: 10 }} disabled={busy} onClick={skipPending}>Verzichten</button>
+          )}
+          {iAmPendingActor && pending.type === "transport" && transportSrc && (
+            <button style={{ ...S.btn("#8a6d3b", true), marginLeft: 10 }} disabled={busy} onClick={() => setTransportSrc(null)}>Andere Karte</button>
+          )}
+        </div>
+      )}
+
+      {game.status !== "playing" && (
+        <div style={{ ...S.banner, marginBottom: 10, textAlign: "center", padding: 16 }}>
+          {game.lastBattle && (
+            <div style={{ marginBottom: 8 }}>
+              {game.lastBattle.type === "withdraw"
+                ? `${game.players[game.lastBattle.loser].name} hat sich zurückgezogen. ${game.players[game.lastBattle.winner].name} erhält ${game.lastBattle.vp} SP.`
+                : `${game.players[game.lastBattle.winner].name} gewinnt die Schlacht und erhält 6 SP.`}
+              {game.lastBattle.detail && (
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                  {game.lastBattle.detail.map((d, i) => (
+                    <div key={i}>{THEATER_META[d.theater].de}: {d.s0}:{d.s1} → {game.players[d.winner].name}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {game.status === "finished" ? (
+            <React.Fragment>
+              <div style={{ ...S.display, fontSize: 30 }}>{game.players[game.winner].name} gewinnt den Krieg</div>
+              <button style={{ ...S.btn(THEATER_META.LAND.color), marginTop: 10 }} disabled={busy} onClick={newWar}>Neuer Krieg</button>
+            </React.Fragment>
+          ) : (
+            <button style={S.btn(THEATER_META.SEA.color)} disabled={busy} onClick={nextBattle}>Nächste Schlacht</button>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6 }}>
+        {game.theaters.map((th, ti) => {
+          const meta = THEATER_META[th];
+          const sMe = theaterStrength(game, ti, me);
+          const sOpp = theaterStrength(game, ti, opp);
+          const tappable =
+            (selCard != null && legalTheaters.includes(ti)) ||
+            (iAmPendingActor && pending.type === "transport" && transportSrc && transportDest.includes(ti)) ||
+            (iAmPendingActor && pending.type === "reinforce" && reinforceDest.includes(ti));
+          const onTapTheater = () => {
+            if (busy) return;
+            if (selCard != null && legalTheaters.includes(ti)) playCard(ti);
+            else if (iAmPendingActor && pending.type === "transport" && transportSrc && transportDest.includes(ti)) resolveTransport(ti);
+            else if (iAmPendingActor && pending.type === "reinforce" && reinforceDest.includes(ti)) resolveReinforce(ti);
+          };
+          return (
+            <div key={ti} onClick={onTapTheater} style={{
+              flex: 1, minWidth: 0,
+              border: `2px solid ${tappable ? RED : meta.color}`,
+              borderRadius: 10,
+              background: tappable ? "#fff" : meta.light + "88",
+              padding: "6px 5px",
+              cursor: tappable ? "pointer" : "default",
+              boxShadow: tappable ? `0 0 0 3px ${RED}33` : "none",
+              display: "flex", flexDirection: "column",
+            }}>
+              <div style={{ minHeight: 40 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.6 }}>{game.players[opp]?.name} · {sOpp}</div>
+                {b.stacks[ti][opp].map((e, idx) => (
+                  <CardChip key={idx} entry={e} mine={false} ti={ti} idx={idx} isTop={idx === b.stacks[ti][opp].length - 1} />
+                ))}
+              </div>
+              <div style={{ ...S.display, textAlign: "center", color: meta.color, fontSize: 15, borderTop: `1px dashed ${meta.color}`, borderBottom: `1px dashed ${meta.color}`, margin: "6px 0", padding: "2px 0" }}>
+                {meta.de}
+              </div>
+              <div style={{ minHeight: 40 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.6 }}>Du · {sMe}</div>
+                {b.stacks[ti][me].map((e, idx) => (
+                  <CardChip key={idx} entry={e} mine={true} ti={ti} idx={idx} isTop={idx === b.stacks[ti][me].length - 1} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {game.status === "playing" && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ ...S.display, fontSize: 13, opacity: 0.6 }}>Deine Hand ({b.hands[me].length}) · Gegner: {b.hands[opp].length} · Stapel: {b.deck.length}</div>
+            {myTurn && (
+              confirmWithdraw ? (
+                <span>
+                  <button style={S.btn(RED, true)} disabled={busy} onClick={doWithdraw}>Wirklich zurückziehen</button>{" "}
+                  <button style={S.btn("#8a6d3b", true)} onClick={() => setConfirmWithdraw(false)}>Abbrechen</button>
+                </span>
+              ) : (
+                <button style={S.btn("#8a6d3b", true)} disabled={busy} onClick={() => setConfirmWithdraw(true)}>Zurückziehen</button>
+              )
+            )}
+          </div>
+          {myTurn && selCard != null && (
+            <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center", fontSize: 13, fontWeight: 600 }}>
+              <button style={S.btn(faceDownMode ? "#7a746a" : THEATER_META[C(selCard).t].color, true)} onClick={() => setFaceDownMode(!faceDownMode)}>
+                {faceDownMode ? "Verdeckt (Stärke 2, überall)" : "Offen (mit Fähigkeit)"}
+              </button>
+              <span style={{ opacity: 0.7 }}>→ dann Schauplatz antippen</span>
+              <button style={S.btn("#8a6d3b", true)} onClick={() => { setSelCard(null); setFaceDownMode(false); }}>×</button>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 6 }}>
+            {b.hands[me].map((id, i) => {
+              const card = C(id);
+              const meta = THEATER_META[card.t];
+              const sel = selCard === id;
+              return (
+                <div key={id + i} onClick={() => { if (myTurn && !busy) { setSelCard(sel ? null : id); setFaceDownMode(false); } }} style={{
+                  minWidth: 108, maxWidth: 108,
+                  border: `2px solid ${sel ? RED : INK}`,
+                  borderRadius: 9,
+                  background: meta.light,
+                  padding: "7px 8px",
+                  cursor: myTurn ? "pointer" : "default",
+                  opacity: myTurn ? 1 : 0.6,
+                  boxShadow: sel ? `3px 3px 0 ${RED}` : "2px 2px 0 " + INK,
+                  flexShrink: 0,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <span style={{ ...S.display, fontSize: 20, color: meta.color }}>{card.s}</span>
+                    <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: meta.color }}>{meta.de}</span>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.15 }}>{card.name}</div>
+                  <div style={{ fontSize: 9.5, opacity: 0.78, lineHeight: 1.25, marginTop: 2 }}>{card.txt}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {error && <div style={{ color: RED, fontWeight: 700, fontSize: 14, marginTop: 8 }}>{error}</div>}
+
+      <div style={{ marginTop: 14 }}>
+        <button style={S.btn("#7a746a", true)} onClick={() => setShowRules(!showRules)}>
+          {showRules ? "Regeln ausblenden" : "Kurzregeln"}
+        </button>
+        {showRules && (
+          <div style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 8, opacity: 0.85 }}>
+            Pro Zug eine Aktion: eine Karte offen in ihren passenden Schauplatz spielen (Fähigkeit wird sofort ausgelöst), eine Karte verdeckt in einen beliebigen Schauplatz spielen (zählt als Stärke 2, keine Fähigkeit), oder zurückziehen. Neue Karten bedecken die eigenen älteren im selben Schauplatz; nur unbedeckte Karten können umgedreht werden. Sind alle Handkarten gespielt, gewinnt die Schlacht, wer in mindestens zwei Schauplätzen die höhere Gesamtstärke hat. Gleichstände und leere Schauplätze gehen an den 1. Spieler (①). Der Sieger erhält 6 Siegpunkte. Wer sich zurückzieht, gibt dem Gegner je nach eigener Handkartenzahl nur 2 bis 6 Punkte: früh aufgeben ist billiger. Nach jeder Schlacht rotieren die Schauplätze, der 1. Spieler wechselt, es werden neue Hände gegeben. Wer zuerst {WIN_VP} Siegpunkte hat, gewinnt.
+          </div>
+        )}
+        {game.log && game.log.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ ...S.display, fontSize: 12, opacity: 0.55, marginBottom: 4 }}>Protokoll</div>
+            {game.log.slice(0, 12).map((l, i) => (
+              <div key={i} style={{ fontSize: 12, opacity: i === 0 ? 0.95 : 0.6, padding: "3px 0", borderBottom: "1px solid rgba(0,0,0,0.08)" }}>{l}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<LuftLandUndSee />);
+</script>
+</body>
+</html>
