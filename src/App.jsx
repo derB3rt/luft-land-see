@@ -22,17 +22,13 @@ const UI = {
     needName: "Bitte Namen eintragen.", notFound: "Spiel nicht gefunden.", full: "Spiel ist schon voll.",
     waiting: "Gib diesen Code deinem Mitspieler. Die Seite aktualisiert sich automatisch.",
     yourTurn: "Du bist dran.", isTurn: "ist dran.", hand: "Deine Hand", you: "Du",
-    down: "verdeckt spielen", downCard: "? verdeckt", next: "Nächste Schlacht", newWar: "Neuer Krieg",
-    winsWar: "gewinnt den Krieg", winsBattle: "gewinnt die Schlacht.", wrong: "Diese Karte gehört nach",
-    anywhere: "Verdeckt geht überall.", logout: "Abmelden", skip: "Effekt überspringen",
-    chooseAdjacent: "Wähle einen benachbarten Schauplatz.",
-    chooseFlip: "Wähle eine unbedeckte Karte zum Drehen.",
-    chooseOwnFlip: "Wähle eine eigene unbedeckte Karte zum Drehen.",
-    chooseMove: "Wähle eine eigene unbedeckte Karte zum Verschieben.",
-    chooseMoveTarget: "Wähle den Ziel-Schauplatz.",
-    chooseRedeploy: "Wähle eine eigene verdeckte Karte für Umgruppierung.",
-    waitingEffect: "Warte auf die Effektwahl deines Mitspielers.",
-    destroyed: "wurde zerstört.",
+    down: "verdeckt spielen", downCard: "? verdeckt", selectedHint: "Karte gewählt – tippe jetzt auf Luft, Land oder See.",
+    next: "Nächste Schlacht", newWar: "Neuer Krieg", winsWar: "gewinnt den Krieg", winsBattle: "gewinnt die Schlacht.",
+    wrong: "Diese Karte gehört nach", anywhere: "Verdeckt geht überall.", logout: "Abmelden", skip: "Effekt überspringen",
+    chooseAdjacent: "Wähle einen benachbarten Schauplatz.", chooseFlip: "Wähle eine unbedeckte Karte zum Drehen.",
+    chooseOwnFlip: "Wähle eine eigene unbedeckte Karte zum Drehen.", chooseMove: "Wähle eine eigene unbedeckte Karte zum Verschieben.",
+    chooseMoveTarget: "Wähle den Ziel-Schauplatz.", chooseRedeploy: "Wähle eine eigene verdeckte Karte für Umgruppierung.",
+    waitingEffect: "Warte auf die Effektwahl deines Mitspielers.", destroyed: "wurde zerstört.",
     notConfigured: "Die App ist hochgeladen, aber Supabase ist noch nicht konfiguriert."
   },
   en: {
@@ -40,17 +36,13 @@ const UI = {
     needName: "Please enter a name.", notFound: "Game not found.", full: "This game is already full.",
     waiting: "Share this code with your opponent. The page refreshes automatically.",
     yourTurn: "Your turn.", isTurn: "is up.", hand: "Your hand", you: "You",
-    down: "play face down", downCard: "? face down", next: "Next battle", newWar: "New war",
-    winsWar: "wins the war", winsBattle: "wins the battle.", wrong: "This card belongs to",
-    anywhere: "Face down works anywhere.", logout: "Logout", skip: "Skip effect",
-    chooseAdjacent: "Choose an adjacent theater.",
-    chooseFlip: "Choose an uncovered card to flip.",
-    chooseOwnFlip: "Choose one of your uncovered cards to flip.",
-    chooseMove: "Choose one of your uncovered cards to move.",
-    chooseMoveTarget: "Choose the target theater.",
-    chooseRedeploy: "Choose one of your face-down cards to redeploy.",
-    waitingEffect: "Waiting for your opponent to resolve an effect.",
-    destroyed: "was destroyed.",
+    down: "play face down", downCard: "? face down", selectedHint: "Card selected – now tap Air, Land, or Sea.",
+    next: "Next battle", newWar: "New war", winsWar: "wins the war", winsBattle: "wins the battle.",
+    wrong: "This card belongs to", anywhere: "Face down works anywhere.", logout: "Logout", skip: "Skip effect",
+    chooseAdjacent: "Choose an adjacent theater.", chooseFlip: "Choose an uncovered card to flip.",
+    chooseOwnFlip: "Choose one of your uncovered cards to flip.", chooseMove: "Choose one of your uncovered cards to move.",
+    chooseMoveTarget: "Choose the target theater.", chooseRedeploy: "Choose one of your face-down cards to redeploy.",
+    waitingEffect: "Waiting for your opponent to resolve an effect.", destroyed: "was destroyed.",
     notConfigured: "The app is uploaded, but Supabase is not configured yet."
   }
 };
@@ -68,23 +60,23 @@ const CARD_NAMES = {
 function cardName(c, lang) { return lang === "en" ? (CARD_NAMES[c[0]] || c[3]) : c[3]; }
 
 const DESC = {
-  A1: { de: "+3 Stärke in benachbarten Schauplätzen.", en: "+3 strength in adjacent theaters." },
-  A2: { de: "Nächste Karte darf in beliebigen Schauplatz.", en: "Next card may go to any theater." },
-  A3: { de: "Drehe eine unbedeckte Karte nebenan um.", en: "Flip an uncovered card next door." },
-  A4: { de: "Karten bis Stärke 3 dürfen überall hin.", en: "Cards up to strength 3 may go anywhere." },
-  A5: { de: "Verdeckte Karten werden sofort abgeworfen.", en: "Face-down cards are discarded." },
+  A1: { de: "+3 Stärke in jedem benachbarten Schauplatz.", en: "+3 strength in each adjacent theater." },
+  A2: { de: "Deine nächste Karte darf in einen nicht passenden Schauplatz.", en: "Your next card may be played to a non-matching theater." },
+  A3: { de: "Drehe eine unbedeckte Karte in einem benachbarten Schauplatz.", en: "Flip an uncovered card in an adjacent theater." },
+  A4: { de: "Karten mit Stärke 3 oder weniger dürfen in nicht passende Schauplätze.", en: "Cards of strength 3 or less may be played to non-matching theaters." },
+  A5: { de: "Wenn eine verdeckte Karte nebenan gespielt wird, wird sie zerstört.", en: "When a face-down card is played next door, it is destroyed." },
   A6: { de: "Keine Fähigkeit. Pure Stärke.", en: "No ability. Pure strength." },
-  L1: { de: "Deckkarte verdeckt nebenan spielen.", en: "Play top deck card face down next door." },
-  L2: { de: "Drehe eine unbedeckte Karte irgendwo um.", en: "Flip any uncovered card." },
-  L3: { de: "Drehe eine unbedeckte Karte nebenan um.", en: "Flip an uncovered card next door." },
-  L4: { de: "Eigene Karten darunter zählen Stärke 4.", en: "Your cards below count as strength 4." },
-  L5: { de: "Beide drehen eigene Karte um. Gegner zuerst.", en: "Both flip own card. Opponent first." },
+  L1: { de: "Ziehe 1 Karte und spiele sie verdeckt in einen benachbarten Schauplatz.", en: "Draw 1 card and play it face down to an adjacent theater." },
+  L2: { de: "Drehe eine beliebige unbedeckte Karte.", en: "Flip any uncovered card." },
+  L3: { de: "Drehe eine unbedeckte Karte in einem benachbarten Schauplatz.", en: "Flip an uncovered card in an adjacent theater." },
+  L4: { de: "Alle eigenen Karten unter dieser Karte haben Stärke 4.", en: "All of your cards covered by this card have strength 4." },
+  L5: { de: "Beginnend mit dem Gegner drehen beide Spieler je 1 eigene unbedeckte Karte.", en: "Starting with your opponent, both players flip one of their uncovered cards." },
   L6: { de: "Keine Fähigkeit. Pure Stärke.", en: "No ability. Pure strength." },
-  S1: { de: "Verschiebe eine eigene unbedeckte Karte.", en: "Move one of your uncovered cards." },
-  S2: { de: "Deine verdeckten Karten zählen Stärke 4.", en: "Your face-down cards count as strength 4." },
-  S3: { de: "Drehe eine unbedeckte Karte nebenan um.", en: "Flip an uncovered card next door." },
-  S4: { de: "Nimm eigene verdeckte Karte zurück und spiele erneut.", en: "Return own face-down card, then play again." },
-  S5: { de: "Blockiert volle benachbarte Schauplätze.", en: "Blocks crowded adjacent theaters." },
+  S1: { de: "Verschiebe 1 eigene unbedeckte Karte in einen anderen Schauplatz.", en: "Move one of your uncovered cards to a different theater." },
+  S2: { de: "Alle deine verdeckten Karten haben Stärke 4.", en: "All your face-down cards have strength 4." },
+  S3: { de: "Drehe eine unbedeckte Karte in einem benachbarten Schauplatz.", en: "Flip an uncovered card in an adjacent theater." },
+  S4: { de: "Nimm 1 eigene verdeckte Karte zurück auf die Hand. Dann spiele 1 Karte.", en: "Return one of your face-down cards to your hand. Then play a card." },
+  S5: { de: "Karten, die nebenan in einen Schauplatz mit 3+ anderen Karten gelegt werden, werden zerstört.", en: "Cards played next door into a theater with 3+ other cards are destroyed." },
   S6: { de: "Keine Fähigkeit. Pure Stärke.", en: "No ability. Pure strength." }
 };
 function desc(id, lang) { return DESC[id]?.[lang] || ""; }
@@ -368,15 +360,17 @@ export default function App() {
 
   const opp = 1 - me;
   const pending = game.round?.pending;
+  const myTurn = game.status === "playing" && game.round?.turn === me && !pending;
 
   return <Shell>
     <Topbar lang={lang} setLang={setLang} onLogout={logout} t={t} />
     <header><b>{game.players[me].name}: {game.players[me].vp}</b><span>{game.code}</span><b>{game.players[opp]?.name}: {game.players[opp]?.vp}</b></header>
     {game.last && <p className="notice">{game.last}</p>}
     {pending && <div className="notice effect"><b>{pendingText(pending)}</b>{pending.player === me && <button onClick={skipEffect}>{t.skip}</button>}</div>}
+    {selected && myTurn && <p className="notice effect"><b>{t.selectedHint}</b></p>}
     {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} {t.winsWar}</h2><button onClick={reset}>{t.newWar}</button></div> : game.status === "between" ? <button onClick={next}>{t.next}</button> : !pending && <p className="turnline">{game.round.turn === me ? t.yourTurn : `${game.players[game.round.turn].name} ${t.isTurn}`}</p>}
     <main>{theaters.map((theater, ti) => <section key={theater} onClick={() => onTheater(ti)} style={{ borderColor: colors[theater] }}><h2 style={{ color: colors[theater] }}>{theaterName(theater, lang)}</h2><Side title={game.players[opp]?.name} stack={game.round.stacks[ti][opp]} ti={ti} pi={opp} onCard={onStackCard} lang={lang} g={game} /><Side title={t.you} stack={game.round.stacks[ti][me]} ti={ti} pi={me} onCard={onStackCard} lang={lang} g={game} /></section>)}</main>
-    {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {cardName(c, lang)}</b><small>{theaterName(c[1], lang)}</small><em>{desc(id, lang)}</em></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
+    {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { if (myTurn) { setSelected(id); setDown(false); } }}><b>{c[2]} {cardName(c, lang)}</b><small>{theaterName(c[1], lang)}</small><em>{desc(id, lang)}</em></button>; })}</div>{selected && myTurn && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
     {error && <b>{error}</b>}
   </Shell>;
 }
