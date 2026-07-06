@@ -1,0 +1,1 @@
+section{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}section:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #1e2320}.app:has(.hand .sel) section{outline:3px solid rgba(156,47,33,.3);outline-offset:2px}
