@@ -60,6 +60,28 @@ function theaterName(value, lang) {
   return value === "Luft" ? "Air" : value === "See" ? "Sea" : value;
 }
 
+const CARD_NAMES = {
+  A1: "Support",
+  A2: "Air Drop",
+  A3: "Maneuver",
+  A4: "Aerodrome",
+  A5: "Containment",
+  A6: "Heavy Bombers",
+  L1: "Reinforce",
+  L2: "Ambush",
+  L3: "Maneuver",
+  L4: "Cover Fire",
+  L5: "Disrupt",
+  L6: "Heavy Tanks",
+  S1: "Transport",
+  S2: "Escalation",
+  S3: "Maneuver",
+  S4: "Redeploy",
+  S5: "Blockade",
+  S6: "Battleship"
+};
+function cardName(c, lang) { return lang === "en" ? (CARD_NAMES[c[0]] || c[3]) : c[3]; }
+
 const DESC = {
   A1: { de: "+3 Stärke in benachbarten Schauplätzen.", en: "+3 strength in adjacent theaters." },
   A2: { de: "Nächste Karte darf in beliebigen Schauplatz.", en: "Next card may go to any theater." },
@@ -347,7 +369,7 @@ export default function App() {
       h.splice(h.indexOf(selected), 1);
       if (g.round.freeNext) g.round.freeNext[me] = false;
       if (destroyedByOngoing(g, ti, down)) {
-        g.last = `${c[3]} ${t.destroyed}`;
+        g.last = `${cardName(c, lang)} ${t.destroyed}`;
         nextTurnOrFinish(g, me);
         return;
       }
@@ -427,7 +449,7 @@ export default function App() {
     {pending && <div className="notice effect"><b>{pendingText(pending)}</b>{pending.player === me && <button onClick={skipEffect}>{t.skip}</button>}</div>}
     {game.status === "finished" ? <div className="notice"><h2>{game.players[game.winner].name} {t.winsWar}</h2><button onClick={reset}>{t.newWar}</button></div> : game.status === "between" ? <button onClick={next}>{t.next}</button> : !pending && <p className="turnline">{game.round.turn === me ? t.yourTurn : `${game.players[game.round.turn].name} ${t.isTurn}`}</p>}
     <main>{theaters.map((theater, ti) => <section key={theater} onClick={() => onTheater(ti)} style={{ borderColor: colors[theater] }}><h2 style={{ color: colors[theater] }}>{theaterName(theater, lang)}</h2><Side title={game.players[opp]?.name} stack={game.round.stacks[ti][opp]} ti={ti} pi={opp} onCard={onStackCard} lang={lang} g={game} /><Side title={t.you} stack={game.round.stacks[ti][me]} ti={ti} pi={me} onCard={onStackCard} lang={lang} g={game} /></section>)}</main>
-    {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {c[3]}</b><small>{theaterName(c[1], lang)}</small><em>{desc(id, lang)}</em></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
+    {game.status === "playing" && <><h3>{t.hand}</h3><div className="hand">{game.round.hands[me].map(id => { const c = card(id); return <button key={id} className={selected === id ? "sel" : ""} onClick={() => { setSelected(id); setDown(false); }}><b>{c[2]} {cardName(c, lang)}</b><small>{theaterName(c[1], lang)}</small><em>{desc(id, lang)}</em></button>; })}</div>{selected && <label><input type="checkbox" checked={down} onChange={e => setDown(e.target.checked)} /> {t.down}</label>}</>}
     {error && <b>{error}</b>}
   </Shell>;
 }
@@ -436,6 +458,6 @@ function Topbar({ lang, setLang, onLogout, t }) {
   return <div className="topbar"><div className="langswitch"><button className={lang === "de" ? "active" : ""} onClick={() => setLang("de")}>DE</button><button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>{onLogout && <button className="logout" onClick={onLogout}>{t.logout}</button>}</div>;
 }
 function Side({ title, stack, ti, pi, onCard, lang, g }) {
-  return <div><small>{title} · {scoreTheater(g, ti, pi)}</small>{stack.map((e, i) => { const c = card(e.id); return <div className="card" onClick={ev => onCard(ev, ti, pi, i)} key={i}>{e.down ? UI[lang].downCard : `${c[2]} ${c[3]}`}</div>; })}</div>;
+  return <div><small>{title} · {scoreTheater(g, ti, pi)}</small>{stack.map((e, i) => { const c = card(e.id); return <div className="card" onClick={ev => onCard(ev, ti, pi, i)} key={i}>{e.down ? UI[lang].downCard : `${c[2]} ${cardName(c, lang)}`}</div>; })}</div>;
 }
 function Shell({ children }) { return <div className="app">{children}</div>; }
